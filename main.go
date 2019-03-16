@@ -437,8 +437,8 @@ func main() {
 
 	router := mux.NewRouter()
 	router.StrictSlash(true)
-	router.HandleFunc(config.BaseURL+"/entry/{token}/{user}", entryHandler)
-	router.HandleFunc(config.BaseURL+"/proxy/{token}/{user}/", proxyHandler)
+	router.HandleFunc(config.BaseURL + "/entry/{token}/{user}", entryHandler)
+	router.HandleFunc(config.BaseURL + "/proxy/{token}/{user}/", proxyHandler)
 	router.PathPrefix(config.BaseURL + "/proxy/{token}/{user}/").HandlerFunc(proxyHandler)
 
 	http.Handle("/", router)
