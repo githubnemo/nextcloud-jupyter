@@ -28,6 +28,7 @@ fi
 
 mkdir "$env_dir" || true
 mkdir "$user_dir" || true
+mkdir "$user_dir/home" || true
 
 cd "$user_dir"
 virtualenv -p python3 "$user_dir/env"
