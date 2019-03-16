@@ -1,0 +1,37 @@
+#! /bin/sh
+#
+#
+
+# PROVIDE: jupyter_starter
+# REQUIRE: DAEMON
+# KEYWORD: shutdown
+
+#
+# Add the following lines to /etc/rc.conf to enable etherpad:
+#
+#jupyter_starter_enable="YES"
+
+. /etc/rc.subr
+
+name="jupyter_starter"
+rcvar="jupyter_starter_enable"
+procname="jupyter-starter"
+
+load_rc_config $name
+
+: ${jupyter_starter_user:=jupyter}
+: ${jupyter_starter_config:=/usr/local/etc/jupyter_starter.json}
+
+pidfile="/var/run/jupyter_starter.pid"
+logfile="/var/log/jupyter_starter.log"
+
+command="/app/jupyter-starter"
+start_cmd=\
+"/usr/sbin/daemon "\
+"-u ${jupyter_starter_user} "\
+"-p ${pidfile} "\
+"-o ${logfile} "\
+"$command"
+
+run_rc_command "$1"
+
