@@ -6,3 +6,7 @@ to provide jupyter notebook instances in nextcloud.
 2. Configure site "jupyter" to point to `<jupyter proxy host>/entry/mysecrettoken/{user}`
 3. Setup the jupyter-starter on `<jupyter proxy host>`
 4. Manage all the foo in the start/stop/setup scripts
+
+
+NOTE: A patch to `gorilla/websocket` is required to make this work.
+Find it in `ws.patch`.

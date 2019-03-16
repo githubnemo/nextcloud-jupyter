@@ -1,0 +1,192 @@
+diff --git a/client.go b/client.go
+index 962c06a..923716d 100644
+--- a/client.go
++++ b/client.go
+@@ -393,3 +393,187 @@ func doHandshake(tlsConn *tls.Conn, cfg *tls.Config) error {
+ 	}
+ 	return nil
+ }
++
++func (d *Dialer) DialContextExisting(ctx context.Context, urlStr string, req *http.Request, challengeKey string) (*Conn, *http.Response, error) {
++	if d == nil {
++		d = &nilDialer
++	}
++
++	u, err := url.Parse(urlStr)
++	if err != nil {
++		return nil, nil, err
++	}
++
++	switch u.Scheme {
++	case "ws":
++		u.Scheme = "http"
++	case "wss":
++		u.Scheme = "https"
++	default:
++		return nil, nil, errMalformedURL
++	}
++
++	if u.User != nil {
++		// User name and password are not allowed in websocket URIs.
++		return nil, nil, errMalformedURL
++	}
++
++	req = req.WithContext(ctx)
++
++	if d.EnableCompression {
++		req.Header["Sec-WebSocket-Extensions"] = []string{"permessage-deflate; server_no_context_takeover; client_no_context_takeover"}
++	}
++
++	if d.HandshakeTimeout != 0 {
++		var cancel func()
++		ctx, cancel = context.WithTimeout(ctx, d.HandshakeTimeout)
++		defer cancel()
++	}
++
++	// Get network dial function.
++	var netDial func(network, add string) (net.Conn, error)
++
++	if d.NetDialContext != nil {
++		netDial = func(network, addr string) (net.Conn, error) {
++			return d.NetDialContext(ctx, network, addr)
++		}
++	} else if d.NetDial != nil {
++		netDial = d.NetDial
++	} else {
++		netDialer := &net.Dialer{}
++		netDial = func(network, addr string) (net.Conn, error) {
++			return netDialer.DialContext(ctx, network, addr)
++		}
++	}
++
++	// If needed, wrap the dial function to set the connection deadline.
++	if deadline, ok := ctx.Deadline(); ok {
++		forwardDial := netDial
++		netDial = func(network, addr string) (net.Conn, error) {
++			c, err := forwardDial(network, addr)
++			if err != nil {
++				return nil, err
++			}
++			err = c.SetDeadline(deadline)
++			if err != nil {
++				c.Close()
++				return nil, err
++			}
++			return c, nil
++		}
++	}
++
++	// If needed, wrap the dial function to connect through a proxy.
++	if d.Proxy != nil {
++		proxyURL, err := d.Proxy(req)
++		if err != nil {
++			return nil, nil, err
++		}
++		if proxyURL != nil {
++			dialer, err := proxy_FromURL(proxyURL, netDialerFunc(netDial))
++			if err != nil {
++				return nil, nil, err
++			}
++			netDial = dialer.Dial
++		}
++	}
++
++	hostPort, hostNoPort := hostPortNoPort(u)
++	trace := httptrace.ContextClientTrace(ctx)
++	if trace != nil && trace.GetConn != nil {
++		trace.GetConn(hostPort)
++	}
++
++	netConn, err := netDial("tcp", hostPort)
++	if trace != nil && trace.GotConn != nil {
++		trace.GotConn(httptrace.GotConnInfo{
++			Conn: netConn,
++		})
++	}
++	if err != nil {
++		return nil, nil, err
++	}
++
++	defer func() {
++		if netConn != nil {
++			netConn.Close()
++		}
++	}()
++
++	if u.Scheme == "https" {
++		cfg := cloneTLSConfig(d.TLSClientConfig)
++		if cfg.ServerName == "" {
++			cfg.ServerName = hostNoPort
++		}
++		tlsConn := tls.Client(netConn, cfg)
++		netConn = tlsConn
++
++		var err error
++		if trace != nil {
++			err = doHandshakeWithTrace(trace, tlsConn, cfg)
++		} else {
++			err = doHandshake(tlsConn, cfg)
++		}
++
++		if err != nil {
++			return nil, nil, err
++		}
++	}
++
++	conn := newConn(netConn, false, d.ReadBufferSize, d.WriteBufferSize, d.WriteBufferPool, nil, nil)
++
++	if err := req.Write(netConn); err != nil {
++		return nil, nil, err
++	}
++
++	if trace != nil && trace.GotFirstResponseByte != nil {
++		if peek, err := conn.br.Peek(1); err == nil && len(peek) == 1 {
++			trace.GotFirstResponseByte()
++		}
++	}
++
++	resp, err := http.ReadResponse(conn.br, req)
++	if err != nil {
++		return nil, nil, err
++	}
++
++	if d.Jar != nil {
++		if rc := resp.Cookies(); len(rc) > 0 {
++			d.Jar.SetCookies(u, rc)
++		}
++	}
++
++	if resp.StatusCode != 101 ||
++		!strings.EqualFold(resp.Header.Get("Upgrade"), "websocket") ||
++		!strings.EqualFold(resp.Header.Get("Connection"), "upgrade") ||
++		resp.Header.Get("Sec-Websocket-Accept") == challengeKey {
++		// Before closing the network connection on return from this
++		// function, slurp up some of the response to aid application
++		// debugging.
++		buf := make([]byte, 1024)
++		n, _ := io.ReadFull(resp.Body, buf)
++		resp.Body = ioutil.NopCloser(bytes.NewReader(buf[:n]))
++		return nil, resp, ErrBadHandshake
++	}
++
++	for _, ext := range parseExtensions(resp.Header) {
++		if ext[""] != "permessage-deflate" {
++			continue
++		}
++		_, snct := ext["server_no_context_takeover"]
++		_, cnct := ext["client_no_context_takeover"]
++		if !snct || !cnct {
++			return nil, resp, errInvalidCompression
++		}
++		conn.newCompressionWriter = compressNoContextTakeover
++		conn.newDecompressionReader = decompressNoContextTakeover
++		break
++	}
++
++	resp.Body = ioutil.NopCloser(bytes.NewReader([]byte{}))
++	conn.subprotocol = resp.Header.Get("Sec-Websocket-Protocol")
++
++	netConn.SetDeadline(time.Time{})
++	netConn = nil // to avoid close in defer.
++	return conn, resp, nil
++}
