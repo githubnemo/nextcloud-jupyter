@@ -1,3 +1,4 @@
+
 #! /bin/sh
 #
 #
@@ -20,18 +21,21 @@ procname="jupyter-starter"
 load_rc_config $name
 
 : ${jupyter_starter_user:=jupyter}
-: ${jupyter_starter_config:=/usr/local/etc/jupyter_starter.json}
+: ${jupyter_starter_config:=/app/jupyter-launch.json}
+: ${jupyter_starter_chdir:=/app}
 
 pidfile="/var/run/jupyter_starter.pid"
 logfile="/var/log/jupyter_starter.log"
+jupyter_starter_env="HOME=/home/jupyter"
 
 command="/app/jupyter-starter"
 start_cmd=\
+"cd ${jupyter_starter_chdir} && "\
+"env ${jupyter_starter_env} "\
 "/usr/sbin/daemon "\
 "-u ${jupyter_starter_user} "\
 "-p ${pidfile} "\
 "-o ${logfile} "\
-"$command"
+"$command -config ${jupyter_starter_config}"
 
 run_rc_command "$1"
-
