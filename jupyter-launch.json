@@ -5,5 +5,6 @@
 	"setup_script": "./setup_env.sh",
 	"start_script": "./start_notebook.sh",
 	"stop_script": "./stop_notebook.sh",
+	"base_url": "/jupyter",
 	"base_port": 9000
 }

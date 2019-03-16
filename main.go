@@ -57,8 +57,9 @@ type Config struct {
 	EnvDir      string `json:"env_dir"`
 	SetupScript string `json:"setup_script"`
 	StartScript string `json:"start_script"`
-	StopScript string `json:"stop_script"`
+	StopScript  string `json:"stop_script"`
 	BasePort    int    `json:"base_port"`
+	BaseURL     string `json:"base_url"`
 }
 
 var config Config
@@ -130,7 +131,7 @@ type SessionHandler struct {
 func isUpgrade(r *http.Request) bool {
 	if v, ok := r.Header["Connection"]; ok {
 		for _, e := range v {
-			if strings.Contains(e, "Upgrade") {
+			if strings.Contains(strings.ToLower(e), "upgrade") {
 				return true
 			}
 		}
@@ -174,6 +175,8 @@ func (s *SessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Println("requesting to", r.URL)
 
 	r.Header["Origin"] = []string{"http://" + host}
+
+	log.Println("request header:", r.Header)
 
 	if isUpgrade(r) {
 		r.URL.Scheme = "ws"
@@ -247,14 +250,17 @@ func entryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf(
-		"/proxy/%s/%s/?token=%s",
+	url := r.URL
+	url.Path = fmt.Sprintf(
+		"%s/proxy/%s/%s/",
+		config.BaseURL,
 		config.Token,
-		vars["user"],
-		handler.Token,
-	)
+		vars["user"])
+	query := url.Query()
+	query.Set("token", handler.Token)
+	url.RawQuery = query.Encode()
 
-	http.Redirect(w, r, url, 302)
+	http.Redirect(w, r, url.String(), 302)
 }
 
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +295,7 @@ func scriptCommand(path string, args ...string) (*exec.Cmd, context.CancelFunc) 
 }
 
 func computeBaseURL(user string) string {
-	return fmt.Sprintf("/proxy/%s/%s/", config.Token, user)
+	return fmt.Sprintf("%s/proxy/%s/%s/", config.BaseURL, config.Token, user)
 }
 
 func setupJupyter(user string) error {
@@ -431,9 +437,9 @@ func main() {
 
 	router := mux.NewRouter()
 	router.StrictSlash(true)
-	router.HandleFunc("/entry/{token}/{user}", entryHandler)
-	router.HandleFunc("/proxy/{token}/{user}/", proxyHandler)
-	router.PathPrefix("/proxy/{token}/{user}/").HandlerFunc(proxyHandler)
+	router.HandleFunc(config.BaseURL+"/entry/{token}/{user}", entryHandler)
+	router.HandleFunc(config.BaseURL+"/proxy/{token}/{user}/", proxyHandler)
+	router.PathPrefix(config.BaseURL + "/proxy/{token}/{user}/").HandlerFunc(proxyHandler)
 
 	http.Handle("/", router)
 
