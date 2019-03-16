@@ -1,0 +1,9 @@
+{
+	"users": ["a", "b"],
+	"token": "cbf2b0501e3260181585a5eefe12c5c4",
+	"env_dir": "/home/nemo/Code/go/src/github.com/githubnemo/jupyter-starter/envs",
+	"setup_script": "./setup_env.sh",
+	"start_script": "./start_notebook.sh",
+	"stop_script": "./stop_notebook.sh",
+	"base_port": 9000
+}
