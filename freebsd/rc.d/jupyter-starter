@@ -16,7 +16,7 @@
 
 name="jupyter_starter"
 rcvar="jupyter_starter_enable"
-procname="jupyter-starter"
+procname="/app/jupyter-starter"
 
 load_rc_config $name
 
